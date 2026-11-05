@@ -642,13 +642,22 @@ def checkpoint(state: State, slug: str, message: str | None, ack: bool, at: str 
 def chain(project: Path, ref: str) -> list[dict]:
     if not ref_sha(project, ref):
         return []
-    fmt = "%H%x1f%P%x1f%cI%x1f%s%x1f%(trailers:key=TM-Id,valueonly)%x1f%(trailers:key=TM-Tree,valueonly)"
+    # trailer placeholders emit their own newlines, so records are separated with RS (0x1e), fields with US (0x1f)
+    fmt = "%H%x1f%P%x1f%cI%x1f%s%x1f%(trailers:key=TM-Id,valueonly)%x1f%(trailers:key=TM-Tree,valueonly)%x1e"
     out = []
-    for line in git(["log", "--first-parent", f"--format={fmt}", ref], project).splitlines():
-        sha, parents, date, subject, tm_id, tree = line.split("\x1f")
+    for rec in git(["log", "--first-parent", f"--format={fmt}", ref], project).split("\x1e"):
+        if not rec.strip():
+            continue
+        sha, parents, date, subject, tm_id, tree = [f.strip() for f in rec.split("\x1f")]
+        if not tm_id:
+            break            # the first checkpoint's only parent is the user's HEAD: the chain ends here
         out.append({"sha": sha, "parents": parents.split(), "date": date, "subject": subject,
-                    "tm_id": tm_id.strip(), "files_tree": tree.strip()})
-    return out[::-1]   # oldest first
+                    "tm_id": tm_id, "files_tree": tree})
+    out.reverse()            # oldest first
+    ours = {e["sha"] for e in out}
+    for e in out:
+        e["user_parents"] = [p for p in e["parents"] if p not in ours]   # links into the user's own history
+    return out
 
 
 # --------------------------------------------------------------------------------------
@@ -803,7 +812,7 @@ def thin(state: State, slug: str, free: bool, now: dt.datetime | None = None):
         parents = []
         if new_prev:
             parents += ["-p", new_prev]
-        for p in e["parents"][1:]:        # keep the user's commit as second parent
+        for p in e["user_parents"]:       # keep links into the user's history (sole parent on the first checkpoint, second parent later)
             parents += ["-p", p]
         env = {"GIT_AUTHOR_DATE": dates[0], "GIT_COMMITTER_DATE": dates[1],
                "GIT_AUTHOR_NAME": dates[2], "GIT_AUTHOR_EMAIL": dates[3],
@@ -917,7 +926,7 @@ def main():
         checkpoint(state, slug, a.message, a.ack, a.at)
     elif a.cmd == "list":
         for e in chain(project, ref_for(state, slug)):
-            second = f"  (+ user commit {e['parents'][1][:8]})" if len(e["parents"]) > 1 else ""
+            second = f"  (+ user commit {e['user_parents'][0][:8]})" if e["user_parents"] else ""
             print(f"  {e['tm_id']:12} {e['sha'][:10]} {e['date']}  {e['subject']}{second}")
     elif a.cmd == "push":
         push(state, slug)
