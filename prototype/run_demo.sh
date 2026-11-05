@@ -4,6 +4,7 @@
 #   With a remote URL, the hidden refs are pushed there (only refs/timemachine/*, never branches).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
+for tool in git python3 age openssl; do command -v "$tool" >/dev/null || { echo "missing: $tool (on a Mac: brew install $tool)"; exit 1; }; done
 W="${1:?work dir}"
 REMOTE="${2:-}"
 TM="python3 $HERE/tm.py --state $W/state"
@@ -12,6 +13,7 @@ B="$W/samples/home/development/recipes-bot"
 NOW="2026-11-05T12:00:00+00:00"
 
 ref_of() { (cd "$1" && git for-each-ref --format='%(refname)' refs/timemachine | head -1); }
+count() { $TM list "$1" | tail -n +2 | grep -c .; }
 step() { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 check() { if eval "$2"; then echo "  PASS  $1"; else echo "  FAIL  $1"; FAILED=1; fi; }
 FAILED=0
@@ -47,7 +49,7 @@ check ".env not stored in clear, secrets.age present"     "grep -q '^.timemachin
 check "user's HEAD still unborn (no commit on main)"      "! (cd '$A' && git rev-parse -q --verify HEAD >/dev/null 2>&1)"
 $TM checkpoint recipes-bot --ack && true
 check "red (service_role in code) blocked even with --ack" "! (cd '$B' && git for-each-ref refs/timemachine | grep -q autosave)"
-sed -i '/quick hack for the admin/,$d' "$B/bot.py"      # the user applied the fix prompt
+python3 -c 'import sys,pathlib; f=pathlib.Path(sys.argv[1]); f.write_text(f.read_text().split("\n# quick hack")[0] + "\n")' "$B/bot.py"   # the user applied the fix prompt
 $TM checkpoint recipes-bot --ack
 check "history-only finding is yellow: checkpoint after --ack" "(cd '$B' && git for-each-ref refs/timemachine | grep -q autosave)"
 check "first checkpoint links the user's HEAD as parent"  "$TM list recipes-bot | grep -q 'user commit'"
@@ -55,9 +57,9 @@ check "user's branch, index and worktree untouched"       "(cd '$B' && [ \"\$(gi
 
 step "4. busy repo and no-change detection"
 mkdir -p "$B/.git/rebase-merge"; $TM checkpoint recipes-bot | tail -1; rmdir "$B/.git/rebase-merge"
-check "no checkpoint while a rebase is in progress"       "[ \"\$($TM list recipes-bot | tail -n +2 | wc -l)\" = 1 ]"
+check "no checkpoint while a rebase is in progress"       "[ \"\$(count recipes-bot)\" = 1 ]"
 $TM checkpoint noa-landing | tail -1
-check "unchanged tree -> no new checkpoint"               "[ \"\$($TM list noa-landing | tail -n +2 | wc -l)\" = 1 ]"
+check "unchanged tree -> no new checkpoint"               "[ \"\$(count noa-landing)\" = 1 ]"
 
 step "5. the disaster: agent edits, then deletes and overwrites; restore"
 printf 'export default function App(){ return <h1>v2</h1> }\n' > "$A/src/App.jsx"; echo "NEW_FLAG=1" >> "$A/.env"
@@ -90,10 +92,10 @@ for i, t in enumerate(sorted(s)):
     pathlib.Path(B, "notes.md").write_text(f"# TODO\n- step {i}\n")
     subprocess.run(["python3", f"{here}/tm.py", "--state", state, "checkpoint", "recipes-bot", "--at", t.isoformat()], capture_output=True, check=True)
 EOF
-BEFORE=$($TM list recipes-bot | tail -n +2 | wc -l); LINKS=$($TM list recipes-bot | grep -c 'user commit')
+BEFORE=$(count recipes-bot); LINKS=$($TM list recipes-bot | grep -c 'user commit')
 TIPTREE=$(cd "$B" && git rev-parse "$(ref_of "$B")^{tree}")
 $TM thin recipes-bot --now "$NOW"
-AFTER=$($TM list recipes-bot | tail -n +2 | wc -l)
+AFTER=$(count recipes-bot)
 echo "  kept per policy: $BEFORE -> $AFTER"
 check "newest checkpoint and its tree survive"            "[ \"\$(cd '$B' && git rev-parse \"\$(ref_of '$B')^{tree}\")\" = '$TIPTREE' ]"
 check "links to the user's commits survive the rewrite"   "[ \"\$($TM list recipes-bot | grep -c 'user commit')\" = '$LINKS' ]"

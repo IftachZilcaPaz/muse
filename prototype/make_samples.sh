@@ -11,6 +11,9 @@
 # All "secrets" below are fabricated strings that match scanner patterns but are not real keys.
 set -euo pipefail
 
+for tool in git python3 openssl; do command -v "$tool" >/dev/null || { echo "missing: $tool"; exit 1; }; done
+# portable relative timestamps for touch -t (BSD touch cannot parse relative dates)
+ago() { python3 -c 'import datetime as d,sys;print((d.datetime.now()-d.timedelta(days=float(sys.argv[1]))).strftime("%Y%m%d%H%M"))' "$1"; }
 ROOT="${1:?target dir}"
 HOME_DIR="$ROOT/home"
 rm -rf "$ROOT"
@@ -88,7 +91,7 @@ head -c 200000 /dev/urandom > "$A/dist/assets/index-abc123.js"
 head -c 4096 /dev/urandom > "$A/public/logo.png"
 touch "$A/.DS_Store"
 # Oversized asset (55 MB): must be excluded by the size guard with a notice
-dd if=/dev/zero of="$A/assets/hero-video.mp4" bs=1M count=55 status=none
+head -c $((55 * 1024 * 1024)) /dev/zero > "$A/assets/hero-video.mp4"
 
 # =====================================================================================
 # Project B: recipes-bot  (persona #2: git exists but messy; .env was committed once)
@@ -166,16 +169,16 @@ mkdir -p "$HOME_DIR/Downloads/untitled folder 12" "$HOME_DIR/development/recipes
 touch "$HOME_DIR/Downloads/untitled folder 12/index.html"
 
 enc() { printf '%s' "$1" | sed 's#/#-#g'; }           # Claude Code's lossy path encoding
-mk_session() { local p="$1" when="$2"; local d="$HOME_DIR/.claude/projects/$(enc "$p")"; mkdir -p "$d"; printf '{"cwd":"%s"}\n' "$p" > "$d/session.jsonl"; touch -d "$when" "$d/session.jsonl" "$d"; }
+mk_session() { local p="$1" days="$2"; local d="$HOME_DIR/.claude/projects/$(enc "$p")"; mkdir -p "$d"; printf '{"cwd":"%s"}\n' "$p" > "$d/session.jsonl"; touch -t "$(ago "$days")" "$d/session.jsonl" "$d"; }
 
-touch -d "3 days ago" "$A"; touch -d "10 days ago" "$B"; touch -d "200 days ago" "$HOME_DIR/Downloads/untitled folder 12"; touch -d "120 days ago" "$HOME_DIR/Desktop/xcode_tests/flights&hotels" 2>/dev/null || true
-mk_session "$HOME_DIR/Downloads/noa-landing"                "3 days ago"
-mk_session "$HOME_DIR/development/recipes-bot"              "10 days ago"
-mk_session "$HOME_DIR/development/recipes-bot/scripts"      "12 days ago"     # nested
-mk_session "$HOME_DIR/Downloads/untitled folder 12"         "200 days ago"    # old
-mk_session "$HOME_DIR"                                      "1 day ago"       # noise: home itself
-mk_session "$HOME_DIR/.claude"                              "1 day ago"       # noise: dot dir
-mk_session "$HOME_DIR/Library/Application Support/Claude/scratch-workspaces/x/y/scratch-1" "1 day ago"  # noise
+touch -t "$(ago 3)" "$A"; touch -t "$(ago 10)" "$B"; touch -t "$(ago 200)" "$HOME_DIR/Downloads/untitled folder 12"; touch -t "$(ago 120)" "$HOME_DIR/Desktop/xcode_tests/flights&hotels"
+mk_session "$HOME_DIR/Downloads/noa-landing"                3
+mk_session "$HOME_DIR/development/recipes-bot"              10
+mk_session "$HOME_DIR/development/recipes-bot/scripts"      12     # nested
+mk_session "$HOME_DIR/Downloads/untitled folder 12"         200    # old
+mk_session "$HOME_DIR"                                      1       # noise: home itself
+mk_session "$HOME_DIR/.claude"                              1       # noise: dot dir
+mk_session "$HOME_DIR/Library/Application Support/Claude/scratch-workspaces/x/y/scratch-1" 1  # noise
 
 python3 - "$HOME_DIR" <<'EOF'
 import json, sys, os
@@ -187,10 +190,10 @@ json.dump({"numStartups": 42, "projects": {p: {"allowedTools": []} for p in path
 EOF
 
 # Cursor: one shared project (recipes-bot) + one Cursor-only project with '&' in its name
-mk_ws() { local p="$1" when="$2" id="$3"; local d="$HOME_DIR/Library/Application Support/Cursor/User/workspaceStorage/$id"; mkdir -p "$d"
-  python3 -c "import json,sys,urllib.parse;print(json.dumps({'folder':'file://'+urllib.parse.quote(sys.argv[1])}))" "$p" > "$d/workspace.json"; touch -d "$when" "$d/workspace.json" "$d"; }
-mk_ws "$HOME_DIR/development/recipes-bot"              "5 days ago"   "aaaa1111"
-mk_ws "$HOME_DIR/Desktop/xcode_tests/flights&hotels"   "120 days ago" "bbbb2222"
+mk_ws() { local p="$1" days="$2" id="$3"; local d="$HOME_DIR/Library/Application Support/Cursor/User/workspaceStorage/$id"; mkdir -p "$d"
+  python3 -c "import json,sys,urllib.parse;print(json.dumps({'folder':'file://'+urllib.parse.quote(sys.argv[1])}))" "$p" > "$d/workspace.json"; touch -t "$(ago "$days")" "$d/workspace.json" "$d"; }
+mk_ws "$HOME_DIR/development/recipes-bot"              5   "aaaa1111"
+mk_ws "$HOME_DIR/Desktop/xcode_tests/flights&hotels"   120 "bbbb2222"
 
 echo "samples ready under $ROOT"
 echo "  A: $A"
