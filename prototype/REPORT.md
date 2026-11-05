@@ -42,7 +42,14 @@
 
 ## מה לא נבדק
 
-1. **GitHub עצמו.** ה-push נכשל ב-403: לאפליקציית Claude ב-GitHub אין הרשאת כתיבה ל-`IftachZilcaPaz/vibe` בסשן הזה. לכן לא אומת שה-ref לא מופיע כ-branch, שקישור ל-commit נפתח, ושה-ref מופיע ב-`ls-remote`. ברגע שההרשאה מסודרת: `run_demo.sh <dir> https://github.com/IftachZilcaPaz/vibe`.
+1. **GitHub עצמו.** שער ה-git של סשן הענן מתיר push רק ל-branch שהוקצה לסשן. push ל-`refs/timemachine/*` וגם push של tag נדחו ב-403 אחרי שהרשאת הכתיבה לריפו סודרה. לכן לא אומת מכאן שה-ref לא מופיע כ-branch, שקישור ל-commit נפתח, ושה-ref מופיע ב-`ls-remote`. זה נבדק ממחשב רגיל עם git מחובר ל-GitHub:
+
+   ```bash
+   git clone -b claude/zen-clarke-r58m65 https://github.com/IftachZilcaPaz/vibe && cd vibe
+   ./prototype/run_demo.sh /tmp/tm-demo https://github.com/IftachZilcaPaz/vibe
+   ```
+
+   ואז ב-GitHub: רשימת ה-branches לא אמורה להשתנות, `git ls-remote` אמור להציג שני refs תחת `refs/timemachine/`, וכתובת `https://github.com/IftachZilcaPaz/vibe/commit/<sha>` של נקודת שמירה אמורה להיפתח. אם הריפו מחובר ל-Vercel או ל-Netlify, זו גם בדיקת ה-deploy.
 2. **Vercel ו-Netlify.** דורש ריפו מחובר לחשבון של המשתמש.
 3. **מרוץ עם סוכן בזמן שחזור.** הלולאה החסומה קיימת בקוד, אבל לא הופעלה בבדיקה, כי אין Watcher באב-הטיפוס.
 4. **Watcher ו-debounce.** לא מומשו. האב-טיפוס מופעל ידנית.
