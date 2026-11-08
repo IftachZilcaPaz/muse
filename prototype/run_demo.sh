@@ -14,7 +14,8 @@ NOW="2026-11-05T12:00:00+00:00"
 
 ref_of() { (cd "$1" && git for-each-ref --format='%(refname)' refs/timemachine | head -1); }
 count() { $TM list "$1" | tail -n +2 | grep -c .; }
-step() { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
+# PAUSE=1 turns this into a live demo: it waits for Enter before every step so you can narrate.
+step() { printf '\n\033[1m== %s ==\033[0m\n' "$*"; if [ "${PAUSE:-0}" = 1 ]; then read -r -p "   (Enter to run) " _ </dev/tty; fi; }
 check() { if eval "$2"; then echo "  PASS  $1"; else echo "  FAIL  $1"; FAILED=1; fi; }
 FAILED=0
 
